@@ -11,6 +11,7 @@ import {
   type Client,
   type Interaction,
   type Message,
+  type TextChannel,
 } from "discord.js";
 import { logger } from "../lib/logger";
 import {
@@ -54,6 +55,25 @@ export async function handleInteraction(
   }
 
   if (interaction.isButton()) {
+    if (interaction.customId === "ticket-close") {
+      await handleCloseTicketButton(interaction);
+      return;
+    }
+    if (interaction.customId === "ticket-delete") {
+      await handleDeleteTicketButton(interaction);
+      return;
+    }
+    if (interaction.customId === "ticket-delete-confirm") {
+      await handleConfirmDeleteTicketButton(interaction);
+      return;
+    }
+    if (interaction.customId === "ticket-delete-cancel") {
+      await interaction.update({
+        content: "Deletion cancelled. The ticket remains closed and its history is preserved.",
+        components: [],
+      });
+      return;
+    }
     if (interaction.customId.startsWith("ticket:")) {
       await handleTicketButton(client, interaction);
       return;
@@ -278,13 +298,38 @@ async function handleSetupCommand(
         );
       }
 
-      await channel.send({
+      const panelPayload = {
         embeds: [
           new EmbedBuilder()
-            .setColor(0x5865f2)
-            .setTitle("Easygoing · Ticket Dashboard")
+            .setColor(0x8b5cf6)
+            .setTitle("✨ Easygoing · Support & Inquiries")
             .setDescription(
-              "Choose the option that best fits your message. Some inquiries are private until staff is ready to give you channel access.",
+              "Need help or want to work with Easygoing? Choose one option below and complete its short form. Please open one ticket per topic and include enough detail for staff to help.\n\n**Before you choose:** Collaboration, Partnership, and Issues begin as private staff tickets. Staff can give you channel access when they are ready. **Other** opens a channel you can see and message right away.",
+            )
+            .setFooter({ text: "Easygoing community · Staff will reply in your ticket" }),
+          new EmbedBuilder()
+            .setColor(0xec4899)
+            .setTitle("🎬 Collaboration Inquiry")
+            .setDescription(
+              "Choose this if you create YouTube content and want to collaborate with Easygoing. The form asks for your Discord @, YouTube @, and why you think the collaboration is a good fit.",
+            ),
+          new EmbedBuilder()
+            .setColor(0x38bdf8)
+            .setTitle("🤝 Discord Partnership")
+            .setDescription(
+              "Choose this to suggest a partnership between Discord communities. Include your Discord @, a working invite link, and a short explanation of your server and proposal.",
+            ),
+          new EmbedBuilder()
+            .setColor(0xf59e0b)
+            .setTitle("🛠️ Issues")
+            .setDescription(
+              "Choose this to report a server problem or ask staff to look into something. Add your Discord @ and describe what happened, where it happened, and any useful details.",
+            ),
+          new EmbedBuilder()
+            .setColor(0x22c55e)
+            .setTitle("💬 Other")
+            .setDescription(
+              "Choose this for anything that does not fit the options above. It creates a visible ticket channel immediately so you and staff can chat there.",
             ),
         ],
         components: [
@@ -292,25 +337,53 @@ async function handleSetupCommand(
             new ButtonBuilder()
               .setCustomId("ticket:collaboration")
               .setLabel("Collaboration Inquiry")
+              .setEmoji("🎬")
               .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
               .setCustomId("ticket:partnership")
               .setLabel("Discord Partnership")
-              .setStyle(ButtonStyle.Primary),
+              .setEmoji("🤝")
+              .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
               .setCustomId("ticket:issue")
               .setLabel("Issues")
-              .setStyle(ButtonStyle.Secondary),
+              .setEmoji("🛠️")
+              .setStyle(ButtonStyle.Danger),
             new ButtonBuilder()
               .setCustomId("ticket:other")
               .setLabel("Other")
+              .setEmoji("💬")
               .setStyle(ButtonStyle.Secondary),
           ),
         ],
-      });
+      };
+      let updatedExistingPanel = false;
+      if ("messages" in channel && client.user) {
+        const recentMessages = await channel.messages.fetch({ limit: 100 });
+        const existingPanel = recentMessages.find(
+          (message) =>
+            message.author.id === client.user?.id &&
+            message.components.some(
+              (row) =>
+                "components" in row &&
+                row.components.some(
+                  (component) =>
+                    "customId" in component &&
+                    component.customId === "ticket:collaboration",
+                ),
+            ),
+        );
+        if (existingPanel) {
+          await existingPanel.edit(panelPayload);
+          updatedExistingPanel = true;
+        }
+      }
+      if (!updatedExistingPanel) {
+        await channel.send(panelPayload);
+      }
       await interaction.reply({
         ...ephemeral,
-        content: `Ticket dashboard posted in <#${TICKET_DASHBOARD_CHANNEL_ID}>.`,
+        content: `${updatedExistingPanel ? "Ticket dashboard updated" : "Ticket dashboard posted"} in <#${TICKET_DASHBOARD_CHANNEL_ID}>.`,
         allowedMentions: { parse: [] },
       });
       return;
@@ -552,7 +625,17 @@ async function handleGrantAccessButton(interaction: ButtonInteraction) {
     SendMessages: true,
     ReadMessageHistory: true,
   });
-  await interaction.message.edit({ components: [] });
+  await interaction.message.edit({
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId("ticket-close")
+          .setLabel("Close ticket")
+          .setEmoji("🔒")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  });
   await channel.send({
     content: `<@${requesterId}> has been given access to this ticket.`,
     allowedMentions: { users: [requesterId] },
@@ -561,6 +644,208 @@ async function handleGrantAccessButton(interaction: ButtonInteraction) {
     ...ephemeral,
     content: "Requester access granted.",
   });
+}
+
+async function handleCloseTicketButton(interaction: ButtonInteraction) {
+  const channel = getTicketChannel(interaction);
+  if (!interaction.guild || !channel) {
+    await interaction.reply({
+      ...ephemeral,
+      content: "This button only works inside an open ticket channel.",
+    });
+    return;
+  }
+
+  const ticket = parseTicketTopic(channel.topic);
+  if (!ticket) {
+    await interaction.reply({
+      ...ephemeral,
+      content: "This channel is not a ticket managed by the bot.",
+    });
+    return;
+  }
+
+  const settings = await getGuildSettings(interaction.guild.id);
+  const isOpener = interaction.user.id === ticket.openerId;
+  if (!isOpener && !canManageTicket(interaction, settings.staffRoleId)) {
+    await interaction.reply({
+      ...ephemeral,
+      content: "Only the ticket opener or ticket staff can close this ticket.",
+    });
+    return;
+  }
+  if (ticket.status === "closed") {
+    await interaction.reply({
+      ...ephemeral,
+      content: "This ticket is already closed.",
+    });
+    return;
+  }
+
+  await interaction.deferReply(ephemeral);
+  await channel.permissionOverwrites.edit(ticket.openerId, {
+    SendMessages: false,
+  });
+  await channel.setTopic(
+    `ticket:${ticket.type};opener:${ticket.openerId};status:closed`,
+    "Ticket closed",
+  );
+  if (!channel.name.startsWith("closed-")) {
+    await channel.setName(`closed-${channel.name}`, "Ticket closed");
+  }
+
+  const originalEmbed = interaction.message.embeds[0];
+  const closedEmbed = originalEmbed
+    ? EmbedBuilder.from(originalEmbed)
+        .setTitle(`🔒 Closed · ${channel.name}`)
+        .setColor(0x64748b)
+    : new EmbedBuilder()
+        .setTitle(`🔒 Closed · ${channel.name}`)
+        .setColor(0x64748b);
+  await interaction.message.edit({
+    embeds: [closedEmbed],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId("ticket-delete")
+          .setLabel("Delete ticket")
+          .setEmoji("🗑️")
+          .setStyle(ButtonStyle.Danger),
+      ),
+    ],
+  });
+  await interaction.editReply({
+    content:
+      "Ticket closed. Its channel and conversation history are preserved; staff can delete it later.",
+  });
+}
+
+async function handleDeleteTicketButton(interaction: ButtonInteraction) {
+  const channel = getTicketChannel(interaction);
+  if (!interaction.guild || !channel) {
+    await interaction.reply({
+      ...ephemeral,
+      content: "This button only works inside a ticket channel.",
+    });
+    return;
+  }
+
+  const ticket = parseTicketTopic(channel.topic);
+  if (!ticket || ticket.status !== "closed") {
+    await interaction.reply({
+      ...ephemeral,
+      content: "Close the ticket first. Open tickets cannot be deleted.",
+    });
+    return;
+  }
+
+  const settings = await getGuildSettings(interaction.guild.id);
+  if (!canManageTicket(interaction, settings.staffRoleId)) {
+    await interaction.reply({
+      ...ephemeral,
+      content: "Only ticket staff can delete a ticket channel.",
+    });
+    return;
+  }
+
+  await interaction.reply({
+    ...ephemeral,
+    content:
+      "Permanently delete this closed ticket channel? This removes the channel and its conversation history and cannot be undone.",
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId("ticket-delete-confirm")
+          .setLabel("Delete permanently")
+          .setEmoji("⚠️")
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId("ticket-delete-cancel")
+          .setLabel("Keep ticket")
+          .setEmoji("↩️")
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+  });
+}
+
+async function handleConfirmDeleteTicketButton(interaction: ButtonInteraction) {
+  const channel = getTicketChannel(interaction);
+  if (!interaction.guild || !channel) {
+    await interaction.update({
+      content: "The ticket channel is no longer available.",
+      components: [],
+    });
+    return;
+  }
+
+  const ticket = parseTicketTopic(channel.topic);
+  if (!ticket || ticket.status !== "closed") {
+    await interaction.update({
+      content: "Only a closed ticket can be deleted.",
+      components: [],
+    });
+    return;
+  }
+
+  const settings = await getGuildSettings(interaction.guild.id);
+  if (!canManageTicket(interaction, settings.staffRoleId)) {
+    await interaction.update({
+      content: "Only ticket staff can delete a ticket channel.",
+      components: [],
+    });
+    return;
+  }
+
+  await interaction.deferUpdate();
+  try {
+    await channel.delete(`Ticket deleted by ${interaction.user.username}`);
+    await interaction.followUp({
+      ...ephemeral,
+      content: "Ticket channel and its conversation history deleted.",
+    });
+  } catch (error) {
+    logger.error(
+      { err: error, guildId: interaction.guild.id, channelId: channel.id },
+      "Could not delete ticket channel",
+    );
+    await interaction.followUp({
+      ...ephemeral,
+      content: "Could not delete the ticket. Check the bot's channel permissions.",
+    });
+  }
+}
+
+function getTicketChannel(
+  interaction: ButtonInteraction,
+): TextChannel | null {
+  const channel = interaction.channel;
+  if (
+    !channel?.isTextBased() ||
+    !("topic" in channel) ||
+    !("setTopic" in channel) ||
+    !("permissionOverwrites" in channel) ||
+    !("setName" in channel)
+  ) {
+    return null;
+  }
+
+  return channel as TextChannel;
+}
+
+function parseTicketTopic(topic: string | null) {
+  const match = topic?.match(
+    /^ticket:(collaboration|partnership|issue|other);opener:(\d{17,20})(?:;status:(open|closed))?$/,
+  );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    type: match[1] as TicketType,
+    openerId: match[2] as string,
+    status: (match[3] ?? "open") as "open" | "closed",
+  };
 }
 
 function canManageTicket(

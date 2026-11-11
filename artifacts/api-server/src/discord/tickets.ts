@@ -201,7 +201,7 @@ export async function createTicketChannel(
     name: channelName,
     type: ChannelType.GuildText,
     parent: settings.ticketCategoryId ?? undefined,
-    topic: `ticket:${type};opener:${opener.id}`,
+    topic: `ticket:${type};opener:${opener.id};status:open`,
     permissionOverwrites,
   });
 
@@ -217,20 +217,27 @@ export async function createTicketChannel(
       })),
     );
 
-  const components = requesterCanSee
-    ? []
-    : [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`ticket-grant:${opener.id}`)
-            .setLabel("Give requester access")
-            .setStyle(ButtonStyle.Success),
-        ),
-      ];
+  const controls = new ActionRowBuilder<ButtonBuilder>();
+  if (!requesterCanSee) {
+    controls.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ticket-grant:${opener.id}`)
+        .setLabel("Give requester access")
+        .setEmoji("🔓")
+        .setStyle(ButtonStyle.Success),
+    );
+  }
+  controls.addComponents(
+    new ButtonBuilder()
+      .setCustomId("ticket-close")
+      .setLabel("Close ticket")
+      .setEmoji("🔒")
+      .setStyle(ButtonStyle.Secondary),
+  );
 
   await channel.send({
     embeds: [embed],
-    components,
+    components: [controls],
     allowedMentions: { parse: [] },
   });
 

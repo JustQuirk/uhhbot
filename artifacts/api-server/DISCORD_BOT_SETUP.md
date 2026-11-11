@@ -5,8 +5,7 @@
 This bot reads message text to detect custom ping phrases and configurable
 prefix commands. In the Discord Developer Portal, open the bot application's
 **Bot** page and enable **Message Content Intent** under **Privileged Gateway
-Intents**. Discord rejected the current connection because that intent is not
-enabled yet.
+Intents**.
 
 Install the bot in the server with both OAuth2 scopes:
 
@@ -48,10 +47,16 @@ The bot starts with `?` as its text prefix. Change it with
 
 ## Ticket behavior
 
-The dashboard is posted in `1568687137933623356`. Collaboration, partnership,
-and issue forms create private channels for staff; staff can use **Give
-requester access** when ready. The **Other** button creates a ticket that the
-requester can see immediately. Ticket numbers are sequential per server.
+The dashboard is posted in `1568687137933623356` and explains each ticket type.
+Collaboration, partnership, and issue forms create private channels for staff;
+staff can use **Give requester access** when ready. The **Other** button creates
+a private channel that the requester can see immediately.
+
+Every ticket has **Close ticket**. Closing keeps the channel and its history,
+renames it with a `closed-` prefix, and prevents the requester from sending more
+messages while preserving read access. After closure, staff can choose **Delete
+ticket**. A confirmation is required; confirming permanently deletes the
+channel and its history. Ticket numbers are sequential per server.
 
 ## Ping choices
 
