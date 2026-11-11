@@ -11,6 +11,7 @@ import {
   handleMessage,
   logInteractionError,
 } from "./handlers";
+import { BOT_LOG_CHANNEL_ID, BOT_LOG_INTERVAL_MS } from "./constants";
 
 export async function startDiscordBot() {
   const token = process.env["DISCORD_BOT_TOKEN"];
@@ -39,6 +40,7 @@ export async function startDiscordBot() {
       .catch((error: unknown) => {
         logger.error({ err: error }, "Could not register Discord slash commands");
       });
+    startLogHeartbeat(readyClient);
   });
 
   client.on(Events.InteractionCreate, (interaction) => {
@@ -97,4 +99,56 @@ export async function startDiscordBot() {
 
   await client.login(token);
   return client;
+}
+
+function startLogHeartbeat(client: Client) {
+  let sending = false;
+  let loggedFirstDelivery = false;
+  const timer = setInterval(() => {
+    if (sending || !client.isReady()) {
+      return;
+    }
+
+    sending = true;
+    void (async () => {
+      try {
+        const channel =
+          client.channels.cache.get(BOT_LOG_CHANNEL_ID) ??
+          (await client.channels.fetch(BOT_LOG_CHANNEL_ID));
+        if (!channel?.isTextBased() || !("send" in channel)) {
+          throw new Error(
+            `Configured log channel ${BOT_LOG_CHANNEL_ID} is unavailable or not text-based.`,
+          );
+        }
+
+        await channel.send({
+          content: "logs",
+          allowedMentions: { parse: [] },
+        });
+        if (!loggedFirstDelivery) {
+          loggedFirstDelivery = true;
+          logger.info(
+            { channelId: BOT_LOG_CHANNEL_ID },
+            "Discord log heartbeat delivered",
+          );
+        }
+      } catch (error) {
+        logger.error(
+          { err: error, channelId: BOT_LOG_CHANNEL_ID },
+          "Could not post the Discord log heartbeat",
+        );
+      } finally {
+        sending = false;
+      }
+    })();
+  }, BOT_LOG_INTERVAL_MS);
+
+  timer.unref();
+  logger.info(
+    {
+      channelId: BOT_LOG_CHANNEL_ID,
+      intervalMs: BOT_LOG_INTERVAL_MS,
+    },
+    "Discord log heartbeat started",
+  );
 }

@@ -65,3 +65,10 @@ Happy Friday, Milestones, Giveaways, and Polls. A short message is required;
 the bot sends it with `@here` in the matching channel. `/ping` requires
 **Manage Messages**. Custom role pings are separately configured with
 `/setup pings add` and enforce their cooldowns per rule.
+
+## Log heartbeat
+
+After connecting, the bot posts the exact message `logs` to channel
+`1568764830561869894` every 30 seconds. This creates up to 2,880 channel
+messages per day. It does not keep an Autoscale deployment awake; Reserved VM
+is still required for continuous uptime.
