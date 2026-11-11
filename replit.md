@@ -1,15 +1,16 @@
-# [Project name]
+# Discord Community Bot
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Discord bot for Easygoing's server, with configurable role pings, private inquiry tickets, server-change announcements, and the requested community ping channels.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server and Discord bot
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL` — Postgres connection string; `DISCORD_BOT_TOKEN` — stored in Replit Secrets
+- Discord setup and required bot permissions: `artifacts/api-server/DISCORD_BOT_SETUP.md`
 
 ## Stack
 
@@ -22,23 +23,29 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/api-server/src/discord/` — Discord commands, ticket interactions, and message listeners
+- `lib/db/src/schema/discord.ts` — persistent server settings, ping rules, and cooldown timestamps
+- `artifacts/api-server/DISCORD_BOT_SETUP.md` — installation, permissions, and command guide
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Server settings and ticket numbering persist in PostgreSQL.
+- Message-triggered pings claim cooldowns atomically so simultaneous matching messages do not duplicate pings.
+- Message Content Intent is required for trigger phrases and text-prefix commands; the bot also registers slash commands at startup.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- `/setup` manages the prefix, custom role pings, ticket dashboard, staff role, ticket category, and server-change posts.
+- `/ping` posts to the configured community channel with a short message and `@here`.
+- Ticket forms create private channels, except the direct-access `Other` ticket.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+The default text prefix is `?`. Ticket and announcement channel IDs and the nine `/ping` destinations are fixed to the IDs supplied by the user.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+Enable Message Content Intent in the Discord Developer Portal before running the bot. The bot role needs channel-management permissions and must be above roles it pings.
 
 ## Pointers
 
