@@ -39,15 +39,7 @@ const setupCommand = new SlashCommandBuilder()
       .addSubcommand((subcommand) =>
         subcommand
           .setName("add")
-          .setDescription("Ping a role when a message contains a phrase")
-          .addStringOption((option) =>
-            option
-              .setName("trigger")
-              .setDescription("Phrase to look for in messages")
-              .setRequired(true)
-              .setMinLength(1)
-              .setMaxLength(100),
-          )
+          .setDescription("Ping a role when any server message is sent")
           .addRoleOption((option) =>
             option
               .setName("role")
@@ -67,10 +59,10 @@ const setupCommand = new SlashCommandBuilder()
           .addIntegerOption((option) =>
             option
               .setName("cooldown-minutes")
-              .setDescription("Minimum time between pings")
+              .setDescription("Minimum time between pings (defaults to 15)")
               .setMinValue(1)
               .setMaxValue(10080)
-              .setRequired(true),
+              .setRequired(false),
           ),
       )
       .addSubcommand((subcommand) =>

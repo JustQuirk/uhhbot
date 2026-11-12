@@ -2,8 +2,8 @@
 
 ## Before the bot can connect
 
-This bot reads message text to detect custom ping phrases and configurable
-prefix commands. In the Discord Developer Portal, open the bot application's
+This bot reads message text for configurable prefix commands. In the Discord
+Developer Portal, open the bot application's
 **Bot** page and enable **Message Content Intent** under **Privileged Gateway
 Intents**.
 
@@ -33,8 +33,9 @@ Run `/setup help` in Discord to see the command list. The main steps are:
 1. `/setup tickets staff-role role:@Staff`
 2. Optionally set a category with `/setup tickets category category:Tickets`
 3. `/setup tickets publish`
-4. Add each trigger with `/setup pings add`, choosing the phrase, role,
-   destination channel, and cooldown in minutes
+4. Add automatic role pings with `/setup pings add`, choosing a role and
+   destination channel. Any non-bot message in the server triggers the ping;
+   the cooldown defaults to 15 minutes and can be changed per rule.
 5. Enable announcements with `/setup changes enabled enabled:true`
 
 Server-change posts use `/setup changes post text:...`. They go to channel
@@ -64,4 +65,6 @@ channel and its history. Ticket numbers are sequential per server.
 Happy Friday, Milestones, Giveaways, and Polls. A short message is required;
 the bot sends it with `@here` in the matching channel. `/ping` requires
 **Manage Messages**. Custom role pings are separately configured with
-`/setup pings add` and enforce their cooldowns per rule.
+`/setup pings add`. Any non-bot message in the server triggers each enabled
+rule, including messages that contain only an attachment. Each rule enforces its
+own cooldown, which defaults to 15 minutes.

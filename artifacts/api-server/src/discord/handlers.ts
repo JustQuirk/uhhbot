@@ -15,6 +15,7 @@ import {
 } from "discord.js";
 import { logger } from "../lib/logger";
 import {
+  ANY_MESSAGE_TRIGGER,
   PING_DESTINATIONS,
   SERVER_CHANGES_CHANNEL_ID,
   TICKET_DASHBOARD_CHANNEL_ID,
@@ -118,7 +119,7 @@ async function handleSetupCommand(
       content: [
         "**Bot setup**",
         "`/setup prefix set` — choose the text-command prefix.",
-        "`/setup pings add` — set a phrase, role, destination, and cooldown.",
+        "`/setup pings add` — ping a role for any server message.",
         "`/setup pings list` / `/setup pings remove` — manage ping rules.",
         "`/setup changes enabled` — turn change announcements on or off.",
         "`/setup changes post` — post a change announcement.",
@@ -169,13 +170,10 @@ async function handleSetupCommand(
 
   if (group === "pings") {
     if (action === "add") {
-      const triggerText = interaction.options.getString("trigger", true).trim();
       const role = interaction.options.getRole("role", true);
       const channel = interaction.options.getChannel("channel", true);
-      const cooldownMinutes = interaction.options.getInteger(
-        "cooldown-minutes",
-        true,
-      );
+      const cooldownMinutes =
+        interaction.options.getInteger("cooldown-minutes") ?? 15;
       if (channel.type !== ChannelType.GuildText &&
           channel.type !== ChannelType.GuildAnnouncement) {
         await interaction.reply({
@@ -187,14 +185,14 @@ async function handleSetupCommand(
 
       const rule = await addPingRule({
         guildId,
-        triggerText,
+        triggerText: ANY_MESSAGE_TRIGGER,
         roleId: role.id,
         channelId: channel.id,
         cooldownMinutes,
       });
       await interaction.reply({
         ...ephemeral,
-        content: `Custom ping #${rule.id} added. Messages containing “${triggerText}” will ping <@&${role.id}> in <#${channel.id}> no more than once every ${cooldownMinutes} minutes.`,
+        content: `Custom ping #${rule.id} added. Any non-bot message in this server will ping <@&${role.id}> in <#${channel.id}> no more than once every ${cooldownMinutes} minutes.`,
         allowedMentions: { parse: [] },
       });
       return;
@@ -206,7 +204,7 @@ async function handleSetupCommand(
         ? rules
             .map(
               (rule) =>
-                `#${rule.id} · “${rule.triggerText}” → <@&${rule.roleId}> in <#${rule.channelId}> · ${rule.cooldownMinutes} min`,
+                `#${rule.id} · Any message → <@&${rule.roleId}> in <#${rule.channelId}> · ${rule.cooldownMinutes} min`,
             )
             .join("\n")
         : "No custom ping rules yet. Use `/setup pings add` to create one.";
@@ -881,48 +879,42 @@ export async function handleMessage(client: Client, message: Message) {
     return;
   }
 
-  if (message.content) {
-    const rules = await listPingRules(message.guild.id);
-    const normalizedMessage = message.content.toLocaleLowerCase();
+  const rules = await listPingRules(message.guild.id);
 
-    for (const rule of rules) {
-      if (
-        !rule.enabled ||
-        !normalizedMessage.includes(rule.triggerText.toLocaleLowerCase())
-      ) {
-        continue;
-      }
-
-      if (!message.guild.roles.cache.has(rule.roleId)) {
-        logger.warn(
-          { guildId: message.guild.id, ruleId: rule.id, roleId: rule.roleId },
-          "Skipping a custom ping with a missing role",
-        );
-        continue;
-      }
-
-      if (!(await claimPingRule(rule))) {
-        continue;
-      }
-
-      const target = await client.channels.fetch(rule.channelId);
-      if (!target?.isTextBased() || !("send" in target)) {
-        logger.warn(
-          {
-            guildId: message.guild.id,
-            ruleId: rule.id,
-            channelId: rule.channelId,
-          },
-          "Skipping a custom ping with an inaccessible channel",
-        );
-        continue;
-      }
-
-      await target.send({
-        content: `<@&${rule.roleId}> A message matching “${rule.triggerText}” was posted in <#${message.channelId}>.`,
-        allowedMentions: { roles: [rule.roleId] },
-      });
+  for (const rule of rules) {
+    if (!rule.enabled) {
+      continue;
     }
+
+    if (!message.guild.roles.cache.has(rule.roleId)) {
+      logger.warn(
+        { guildId: message.guild.id, ruleId: rule.id, roleId: rule.roleId },
+        "Skipping a custom ping with a missing role",
+      );
+      continue;
+    }
+
+    if (!(await claimPingRule(rule))) {
+      continue;
+    }
+
+    const target = await client.channels.fetch(rule.channelId);
+    if (!target?.isTextBased() || !("send" in target)) {
+      logger.warn(
+        {
+          guildId: message.guild.id,
+          ruleId: rule.id,
+          channelId: rule.channelId,
+        },
+        "Skipping a custom ping with an inaccessible channel",
+      );
+      continue;
+    }
+
+    await target.send({
+      content: `<@&${rule.roleId}> A message was posted in <#${message.channelId}>.`,
+      allowedMentions: { roles: [rule.roleId] },
+    });
   }
 
   const settings = await getGuildSettings(message.guild.id);
