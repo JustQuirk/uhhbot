@@ -45,6 +45,4 @@ writeFileSync(
   ),
 );
 
-copyFileSync(join(sourceDir, "lib", "logger.ts"), join(libExport, "logger.ts"));
-
 console.log(`Standalone Discord bot refreshed at ${exportDir}`);
