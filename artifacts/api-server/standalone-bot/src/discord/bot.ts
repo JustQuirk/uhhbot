@@ -11,6 +11,7 @@ import {
   handleMessage,
   logInteractionError,
 } from "./handlers";
+import { startSubscriberCountUpdater } from "./youtube-subscriber-count";
 
 export async function startDiscordBot() {
   const token = process.env["DISCORD_BOT_TOKEN"];
@@ -39,6 +40,7 @@ export async function startDiscordBot() {
       .catch((error: unknown) => {
         logger.error({ err: error }, "Could not register Discord slash commands");
       });
+    startSubscriberCountUpdater(readyClient);
   });
 
   client.on(Events.InteractionCreate, (interaction) => {

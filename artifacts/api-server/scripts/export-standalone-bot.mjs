@@ -17,7 +17,13 @@ const libExport = join(exportDir, "src", "lib");
 mkdirSync(discordExport, { recursive: true });
 mkdirSync(libExport, { recursive: true });
 
-for (const file of ["bot.ts", "commands.ts", "constants.ts", "handlers.ts"]) {
+for (const file of [
+  "bot.ts",
+  "commands.ts",
+  "constants.ts",
+  "handlers.ts",
+  "youtube-subscriber-count.ts",
+]) {
   copyFileSync(join(discordSource, file), join(discordExport, file));
 }
 
