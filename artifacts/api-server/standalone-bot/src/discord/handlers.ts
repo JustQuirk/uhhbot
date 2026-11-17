@@ -15,20 +15,18 @@ import {
 } from "discord.js";
 import { logger } from "../lib/logger";
 import {
-  ANY_MESSAGE_TRIGGER,
+  MISHAPS_AUTO_PING_CHANNEL_ID,
+  MISHAPS_AUTO_PING_COOLDOWN_MS,
+  MISHAPS_AUTO_PING_ROLE_ID,
   PING_DESTINATIONS,
+  SLASH_PING_COOLDOWN_MS,
   SERVER_CHANGES_CHANNEL_ID,
   TICKET_DASHBOARD_CHANNEL_ID,
   TICKET_TYPES,
-  type PingDestinationValue,
   type TicketType,
 } from "./constants";
 import {
-  addPingRule,
-  claimPingRule,
   getGuildSettings,
-  listPingRules,
-  removePingRule,
   updateGuildSettings,
 } from "./storage";
 import {
@@ -38,6 +36,8 @@ import {
 } from "./tickets";
 
 const ephemeral = { flags: MessageFlags.Ephemeral } as const;
+const automaticPingCooldowns = new Map<string, number>();
+const slashPingCooldowns = new Map<string, number>();
 
 export async function handleInteraction(
   client: Client,
@@ -50,7 +50,7 @@ export async function handleInteraction(
     }
 
     if (interaction.commandName === "ping") {
-      await handlePingCommand(client, interaction);
+      await handlePingCommand(interaction);
       return;
     }
   }
@@ -119,15 +119,14 @@ async function handleSetupCommand(
       content: [
         "**Bot setup**",
         "`/setup prefix set` — choose the text-command prefix.",
-        "`/setup pings add` — ping a role for any server message.",
-        "`/setup pings list` / `/setup pings remove` — manage ping rules.",
         "`/setup changes enabled` — turn change announcements on or off.",
         "`/setup changes post` — post a change announcement.",
         "`/setup tickets staff-role` — choose who can see and manage tickets.",
         "`/setup tickets category` — choose where ticket channels are created.",
         "`/setup tickets publish` — post the ticket dashboard.",
-        "`/ping` — post a selected community ping (Manage Messages required).",
-        "Prefix commands: `<prefix>help` and `<prefix>ping`.",
+        "`/ping` — mention one of nine roles in this channel. Manage Messages is required; moderators have a five-minute cooldown and administrators bypass it.",
+        `Manager Mishaps: messages in <#${MISHAPS_AUTO_PING_CHANNEL_ID}> ping <@&${MISHAPS_AUTO_PING_ROLE_ID}> once per 15 minutes.`,
+        "Prefix commands: `<prefix>help` and `<prefix>ping` (response check only).",
       ].join("\n"),
       allowedMentions: { parse: [] },
     });
@@ -166,67 +165,6 @@ async function handleSetupCommand(
       content: `Text command prefix set to \`${prefix}\`.`,
     });
     return;
-  }
-
-  if (group === "pings") {
-    if (action === "add") {
-      const role = interaction.options.getRole("role", true);
-      const channel = interaction.options.getChannel("channel", true);
-      const cooldownMinutes =
-        interaction.options.getInteger("cooldown-minutes") ?? 15;
-      if (channel.type !== ChannelType.GuildText &&
-          channel.type !== ChannelType.GuildAnnouncement) {
-        await interaction.reply({
-          ...ephemeral,
-          content: "Choose a text or announcement channel in this server.",
-        });
-        return;
-      }
-
-      const rule = await addPingRule({
-        guildId,
-        triggerText: ANY_MESSAGE_TRIGGER,
-        roleId: role.id,
-        channelId: channel.id,
-        cooldownMinutes,
-      });
-      await interaction.reply({
-        ...ephemeral,
-        content: `Custom ping #${rule.id} added. Any non-bot message in this server will ping <@&${role.id}> in <#${channel.id}> no more than once every ${cooldownMinutes} minutes.`,
-        allowedMentions: { parse: [] },
-      });
-      return;
-    }
-
-    if (action === "list") {
-      const rules = await listPingRules(guildId);
-      const description = rules.length
-        ? rules
-            .map(
-              (rule) =>
-                `#${rule.id} · Any message → <@&${rule.roleId}> in <#${rule.channelId}> · ${rule.cooldownMinutes} min`,
-            )
-            .join("\n")
-        : "No custom ping rules yet. Use `/setup pings add` to create one.";
-      await interaction.reply({
-        ...ephemeral,
-        content: description.slice(0, 1900),
-        allowedMentions: { parse: [] },
-      });
-      return;
-    }
-
-    if (action === "remove") {
-      const ruleId = interaction.options.getInteger("rule-id", true);
-      const removed = await removePingRule(guildId, ruleId);
-      await interaction.reply({
-        ...ephemeral,
-        content: removed
-          ? `Custom ping #${ruleId} removed.`
-          : `No custom ping rule #${ruleId} was found in this server.`,
-      });
-      return;
-    }
   }
 
   if (group === "changes") {
@@ -425,7 +363,6 @@ async function handleSetupCommand(
 }
 
 async function handlePingCommand(
-  client: Client,
   interaction: ChatInputCommandInteraction,
 ) {
   if (!interaction.guild) {
@@ -435,10 +372,25 @@ async function handlePingCommand(
     });
     return;
   }
-  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
+  const isAdministrator = Boolean(
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator),
+  );
+  const canManageMessages = Boolean(
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages),
+  );
+  if (!isAdministrator && !canManageMessages) {
     await interaction.reply({
       ...ephemeral,
-      content: "You need Manage Messages permission to use this ping.",
+      content: "You need Manage Messages or Administrator permission to use this ping.",
+    });
+    return;
+  }
+
+  const channel = interaction.channel;
+  if (!channel?.isTextBased() || !("send" in channel)) {
+    await interaction.reply({
+      ...ephemeral,
+      content: "Use `/ping` in a text channel.",
     });
     return;
   }
@@ -450,47 +402,42 @@ async function handlePingCommand(
   if (!destination) {
     throw new Error("Unknown ping destination selected.");
   }
-  const text = sanitizePingText(
-    interaction.options.getString("message", true).trim(),
-  );
-  await postPing(client, destination.value, text);
+
+  const cooldownKey = `${interaction.guild.id}:${interaction.user.id}`;
+  let reservedAt: number | undefined;
+  if (!isAdministrator) {
+    const claim = claimCooldown(
+      slashPingCooldowns,
+      cooldownKey,
+      SLASH_PING_COOLDOWN_MS,
+    );
+    if (!claim.allowed) {
+      await interaction.reply({
+        ...ephemeral,
+        content: `You can use \`/ping\` again in ${formatCooldownTime(claim.retryAfterMs)}.`,
+      });
+      return;
+    }
+    reservedAt = claim.reservedAt;
+  }
+
+  try {
+    await channel.send({
+      content: `<@&${destination.roleId}>`,
+      allowedMentions: { roles: [destination.roleId] },
+    });
+  } catch (error) {
+    if (reservedAt !== undefined) {
+      releaseCooldown(slashPingCooldowns, cooldownKey, reservedAt);
+    }
+    throw error;
+  }
+
   await interaction.reply({
     ...ephemeral,
-    content: `Ping posted in <#${destination.channelId}>.`,
+    content: `Mentioned the ${destination.name} role in this channel.`,
     allowedMentions: { parse: [] },
   });
-}
-
-async function postPing(
-  client: Client,
-  destinationValue: PingDestinationValue,
-  text: string,
-) {
-  const destination = PING_DESTINATIONS.find(
-    (entry) => entry.value === destinationValue,
-  );
-  if (!destination) {
-    throw new Error("Unknown ping destination selected.");
-  }
-
-  const channel = await client.channels.fetch(destination.channelId);
-  if (!channel?.isTextBased() || !("send" in channel)) {
-    throw new Error(
-      `The configured ping channel ${destination.channelId} is not accessible.`,
-    );
-  }
-
-  await channel.send({
-    content: `@here **${destination.name} ping**\n${text}`,
-    allowedMentions: { parse: ["everyone"] },
-  });
-}
-
-function sanitizePingText(text: string) {
-  return text
-    .replace(/@everyone/gi, "@ everyone")
-    .replace(/@here/gi, "@ here")
-    .trim();
 }
 
 async function handleTicketButton(
@@ -879,42 +826,34 @@ export async function handleMessage(client: Client, message: Message) {
     return;
   }
 
-  const rules = await listPingRules(message.guild.id);
-
-  for (const rule of rules) {
-    if (!rule.enabled) {
-      continue;
-    }
-
-    if (!message.guild.roles.cache.has(rule.roleId)) {
-      logger.warn(
-        { guildId: message.guild.id, ruleId: rule.id, roleId: rule.roleId },
-        "Skipping a custom ping with a missing role",
-      );
-      continue;
-    }
-
-    if (!(await claimPingRule(rule))) {
-      continue;
-    }
-
-    const target = await client.channels.fetch(rule.channelId);
-    if (!target?.isTextBased() || !("send" in target)) {
+  if (message.channelId === MISHAPS_AUTO_PING_CHANNEL_ID) {
+    if (!message.guild.roles.cache.has(MISHAPS_AUTO_PING_ROLE_ID)) {
       logger.warn(
         {
           guildId: message.guild.id,
-          ruleId: rule.id,
-          channelId: rule.channelId,
+          roleId: MISHAPS_AUTO_PING_ROLE_ID,
         },
-        "Skipping a custom ping with an inaccessible channel",
+        "Skipping the Manager Mishaps ping because its role is unavailable",
       );
-      continue;
+    } else if (message.channel.isTextBased() && "send" in message.channel) {
+      const cooldownKey = message.guild.id;
+      const claim = claimCooldown(
+        automaticPingCooldowns,
+        cooldownKey,
+        MISHAPS_AUTO_PING_COOLDOWN_MS,
+      );
+      if (claim.allowed) {
+        try {
+          await message.channel.send({
+            content: `<@&${MISHAPS_AUTO_PING_ROLE_ID}>`,
+            allowedMentions: { roles: [MISHAPS_AUTO_PING_ROLE_ID] },
+          });
+        } catch (error) {
+          releaseCooldown(automaticPingCooldowns, cooldownKey, claim.reservedAt);
+          throw error;
+        }
+      }
     }
-
-    await target.send({
-      content: `<@&${rule.roleId}> A message was posted in <#${message.channelId}>.`,
-      allowedMentions: { roles: [rule.roleId] },
-    });
   }
 
   const settings = await getGuildSettings(message.guild.id);
@@ -922,7 +861,7 @@ export async function handleMessage(client: Client, message: Message) {
     return;
   }
 
-  const [command, destinationKey, ...messageParts] = message.content
+  const [command] = message.content
     .slice(settings.prefix.length)
     .trim()
     .split(/\s+/);
@@ -934,7 +873,7 @@ export async function handleMessage(client: Client, message: Message) {
         `Text prefix: \`${settings.prefix}\``,
         `\`${settings.prefix}help\` — show this guide`,
         `\`${settings.prefix}ping\` — check bot response`,
-        "Use `/setup help` for server settings and `/ping` for community channel pings.",
+        "Use `/setup help` for server settings and `/ping` to mention a role in this channel.",
       ].join("\n"),
       allowedMentions: { parse: [] },
     });
@@ -942,37 +881,57 @@ export async function handleMessage(client: Client, message: Message) {
   }
 
   if (normalizedCommand === "ping") {
-    if (!destinationKey) {
-      await message.reply(
-        `Pong! Use /ping for community pings, or ${settings.prefix}help for commands.`,
-      );
-      return;
-    }
-
-    const destination = PING_DESTINATIONS.find(
-      (entry) => entry.value === destinationKey.toLocaleLowerCase(),
+    await message.reply(
+      `Pong! Use /ping to mention a role, or ${settings.prefix}help for commands.`,
     );
-    if (!destination) {
-      await message.reply(
-        `Unknown ping type. Available: ${PING_DESTINATIONS.map((entry) => entry.value).join(", ")}.`,
-      );
-      return;
-    }
-    if (!message.member?.permissions.has(PermissionFlagsBits.ManageMessages)) {
-      await message.reply("You need Manage Messages permission to post a ping.");
-      return;
-    }
-
-    const text = sanitizePingText(messageParts.join(" ").trim());
-    if (!text) {
-      await message.reply(
-        `Add a message, for example: ${settings.prefix}ping revive We're going live.`,
-      );
-      return;
-    }
-    await postPing(client, destination.value, text);
-    await message.reply(`Ping posted in <#${destination.channelId}>.`);
   }
+}
+
+function claimCooldown(
+  cooldowns: Map<string, number>,
+  key: string,
+  durationMs: number,
+  now = Date.now(),
+) {
+  const lastUsedAt = cooldowns.get(key);
+  if (lastUsedAt !== undefined && now - lastUsedAt < durationMs) {
+    return {
+      allowed: false as const,
+      retryAfterMs: durationMs - (now - lastUsedAt),
+    };
+  }
+
+  cooldowns.set(key, now);
+  for (const [storedKey, timestamp] of cooldowns) {
+    if (now - timestamp >= durationMs) {
+      cooldowns.delete(storedKey);
+    }
+  }
+
+  return { allowed: true as const, reservedAt: now };
+}
+
+function releaseCooldown(
+  cooldowns: Map<string, number>,
+  key: string,
+  reservedAt: number,
+) {
+  if (cooldowns.get(key) === reservedAt) {
+    cooldowns.delete(key);
+  }
+}
+
+function formatCooldownTime(milliseconds: number) {
+  const seconds = Math.ceil(milliseconds / 1_000);
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes === 0) {
+    return `${remainingSeconds} second${remainingSeconds === 1 ? "" : "s"}`;
+  }
+  if (remainingSeconds === 0) {
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  return `${minutes} minute${minutes === 1 ? "" : "s"} and ${remainingSeconds} second${remainingSeconds === 1 ? "" : "s"}`;
 }
 
 export function logInteractionError(error: unknown, interaction: {

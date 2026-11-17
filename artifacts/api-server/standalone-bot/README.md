@@ -29,10 +29,14 @@ roles, mention roles, and manage the subscriber voice channel.
 
 Run `/setup help` in the server. The bot starts with `?` as its text prefix.
 Configure tickets and server-change announcements with `/setup tickets` and
-`/setup changes`. Create an automatic ping using `/setup pings add`; any
-non-bot server message triggers the configured role ping. Leave
-`cooldown-minutes` blank for the 15-minute default, or choose a different
-cooldown.
+`/setup changes`. Messages in channel `1570082352007225486` automatically ping
+the Manager Mishaps role `1568379028979851264` in that channel, at most once
+every 15 minutes. Other channels do not trigger this automatic ping.
+
+Use `/ping` to choose one of the nine supplied roles; it mentions the role in
+the channel where you run the command. Members with **Manage Messages** can use
+it once every five minutes; **Administrator** bypasses that cooldown. Prefix
+`?ping` only checks whether the bot responds and cannot post role pings.
 
 Voice channel `1568781440500375673` displays the public subscriber count for
 `@easygoingdoors` and refreshes once per minute. YouTube rounds public counts;

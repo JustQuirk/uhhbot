@@ -33,18 +33,15 @@ Run `/setup help` in Discord to see the command list. The main steps are:
 1. `/setup tickets staff-role role:@Staff`
 2. Optionally set a category with `/setup tickets category category:Tickets`
 3. `/setup tickets publish`
-4. Add automatic role pings with `/setup pings add`, choosing a role and
-   destination channel. Any non-bot message in the server triggers the ping;
-   the cooldown defaults to 15 minutes and can be changed per rule.
-5. Enable announcements with `/setup changes enabled enabled:true`
+4. Enable announcements with `/setup changes enabled enabled:true`
 
 Server-change posts use `/setup changes post text:...`. They go to channel
 `1568722944492970004` with an `@here` mention and the embed title
 **New Server Changes!**.
 
 The bot starts with `?` as its text prefix. Change it with
-`/setup prefix set prefix:!`. Text commands include `!help`, `!ping`, and
-`!ping revive Your message` (replace `!` with the configured prefix).
+`/setup prefix set prefix:!`. Text commands include `!help` and `!ping`;
+`!ping` only checks whether the bot responds.
 
 ## Ticket behavior
 
@@ -62,9 +59,10 @@ channel and its history. Ticket numbers are sequential per server.
 ## Ping choices
 
 `/ping` offers Revive, Announcements, Mishaps, Uploads, Kitty Gallery,
-Happy Friday, Milestones, Giveaways, and Polls. A short message is required;
-the bot sends it with `@here` in the matching channel. `/ping` requires
-**Manage Messages**. Custom role pings are separately configured with
-`/setup pings add`. Any non-bot message in the server triggers each enabled
-rule, including messages that contain only an attachment. Each rule enforces its
-own cooldown, which defaults to 15 minutes.
+Happy Friday, Milestones, Giveaways, and Polls. It mentions the selected role
+in the channel where the command is run. Members with **Manage Messages** can
+use it once every five minutes; **Administrator** bypasses that cooldown.
+
+Separately, each non-bot message in channel `1570082352007225486` pings role
+`1568379028979851264` in that same channel, with a 15-minute cooldown. Messages
+in other channels do not trigger this automatic ping.

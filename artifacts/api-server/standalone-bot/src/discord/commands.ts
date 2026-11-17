@@ -34,57 +34,6 @@ const setupCommand = new SlashCommandBuilder()
   )
   .addSubcommandGroup((group) =>
     group
-      .setName("pings")
-      .setDescription("Configure automatic role pings")
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("add")
-          .setDescription("Ping a role when any server message is sent")
-          .addRoleOption((option) =>
-            option
-              .setName("role")
-              .setDescription("Role to ping")
-              .setRequired(true),
-          )
-          .addChannelOption((option) =>
-            option
-              .setName("channel")
-              .setDescription("Channel where the ping should be posted")
-              .addChannelTypes(
-                ChannelType.GuildText,
-                ChannelType.GuildAnnouncement,
-              )
-              .setRequired(true),
-          )
-          .addIntegerOption((option) =>
-            option
-              .setName("cooldown-minutes")
-              .setDescription("Minimum time between pings (defaults to 15)")
-              .setMinValue(1)
-              .setMaxValue(10080)
-              .setRequired(false),
-          ),
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("list")
-          .setDescription("Show custom ping rules"),
-      )
-      .addSubcommand((subcommand) =>
-        subcommand
-          .setName("remove")
-          .setDescription("Remove a custom ping rule")
-          .addIntegerOption((option) =>
-            option
-              .setName("rule-id")
-              .setDescription("ID shown by the ping rules list")
-              .setMinValue(1)
-              .setRequired(true),
-          ),
-      ),
-  )
-  .addSubcommandGroup((group) =>
-    group
       .setName("changes")
       .setDescription("Configure and post server changes")
       .addSubcommand((subcommand) =>
@@ -148,12 +97,12 @@ const setupCommand = new SlashCommandBuilder()
 
 const pingCommand = new SlashCommandBuilder()
   .setName("ping")
-  .setDescription("Post a ping in a configured community channel")
+  .setDescription("Mention a selected role in this channel")
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
   .addStringOption((option) =>
     option
       .setName("ping")
-      .setDescription("Which community channel to ping")
+      .setDescription("Which role to mention here")
       .setRequired(true)
       .addChoices(
         ...PING_DESTINATIONS.map(({ name, value }) => ({
@@ -161,13 +110,6 @@ const pingCommand = new SlashCommandBuilder()
           value,
         })),
       ),
-  )
-  .addStringOption((option) =>
-    option
-      .setName("message")
-      .setDescription("The short message to include with the ping")
-      .setRequired(true)
-      .setMaxLength(1500),
   );
 
 export const slashCommands = [setupCommand, pingCommand];
