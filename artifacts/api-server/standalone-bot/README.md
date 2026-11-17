@@ -6,7 +6,7 @@ bot, not the Replit API server, workspace packages, or Replit configuration.
 ## Deploy on Bot-Hosting.net
 
 1. Create an **Application** deployment and choose **Node.js**.
-2. Select this GitHub repository and the `main` branch.
+2. Select this GitHub repository and the `bot-hosting-clean` branch.
 3. Set the startup/entry file to `index.js`.
 4. Add the secret environment variables `DISCORD_BOT_TOKEN` and
    `YOUTUBE_API_KEY` in the host's Environment tab. Enable YouTube Data API v3

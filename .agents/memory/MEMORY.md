@@ -1,0 +1,1 @@
+- [Standalone bot logging](standalone-bot-logging.md) — retain Pino pretty output and ship its formatter as a runtime dependency.
