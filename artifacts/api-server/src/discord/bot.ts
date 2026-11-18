@@ -11,6 +11,7 @@ import {
   handleMessage,
   logInteractionError,
 } from "./handlers";
+import { startCommentOfTheDayScheduler } from "./comment-of-the-day";
 import { startSubscriberCountUpdater } from "./youtube-subscriber-count";
 
 export async function startDiscordBot() {
@@ -41,6 +42,7 @@ export async function startDiscordBot() {
         logger.error({ err: error }, "Could not register Discord slash commands");
       });
     startSubscriberCountUpdater(readyClient);
+    startCommentOfTheDayScheduler(readyClient);
   });
 
   client.on(Events.InteractionCreate, (interaction) => {

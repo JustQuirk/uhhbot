@@ -22,6 +22,7 @@ for (const file of [
   "commands.ts",
   "constants.ts",
   "handlers.ts",
+  "comment-of-the-day.ts",
   "youtube-subscriber-count.ts",
 ]) {
   copyFileSync(join(discordSource, file), join(discordExport, file));

@@ -43,6 +43,12 @@ The bot starts with `?` as its text prefix. Change it with
 `/setup prefix set prefix:!`. Text commands include `!help` and `!ping`;
 `!ping` only checks whether the bot responds.
 
+Once `YOUTUBE_API_KEY` is configured, the bot posts one anonymous Comment of
+the Day embed in channel `1572605882146099221` daily at noon Warsaw time. It
+checks the latest ten uploads up to three minutes long and chooses the
+public top-level comment with the most likes. The embed omits the commenter's
+name, avatar, and profile link.
+
 ## Ticket behavior
 
 The dashboard is posted in `1568687137933623356` and explains each ticket type.

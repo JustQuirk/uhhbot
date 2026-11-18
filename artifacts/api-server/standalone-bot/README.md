@@ -44,6 +44,12 @@ the bot formats counts above 1,000 compactly, such as `1.02K`. If
 `YOUTUBE_API_KEY` is missing or the API is unavailable, the bot stays online
 and logs the update failure.
 
+Each day at noon Warsaw time, the bot scans recent uploads up to three minutes
+long, checks up to ten Shorts for public comments, and posts the most-liked
+comment as an anonymous embed in channel `1572605882146099221`. The embed
+contains only the comment text, not the commenter's name, avatar, or profile.
+This uses the same `YOUTUBE_API_KEY`.
+
 The bot saves settings and cooldown state to `data/bot-data.json`. That file is
 ignored by Git and remains on the host across GitHub pulls. This standalone copy
 starts with fresh settings; re-run `/setup` after moving it from Replit.
